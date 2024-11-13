@@ -351,23 +351,6 @@ ATM<T, ITYPE> *read_mtx_matrix_atm(const char *mtx_file_name, std::vector<struct
     return atm;
 }
 
-template<typename T, typename ITYPE>
-SPLIT_CSR<T, ITYPE> *read_mtx_matrix_split_csr(const char *mtx_file_name, ITYPE num_partitions)
-{
-    ITYPE nrows, ncols, nnzs;
-    std::pair<ITYPE, ITYPE> *locs;
-    T *vals;
-
-    read_mtx_matrix_into_arrays(mtx_file_name, &locs, &vals, &nrows, &ncols, &nnzs);
-    SPLIT_CSR<T, ITYPE> *split_csr = new SPLIT_CSR<T, ITYPE>(nrows, ncols, nnzs, locs, vals, num_partitions);
-
-    if (locs) { delete[] locs; }
-    if (vals) { delete[] vals; }
-
-    return split_csr;
-}
-
-
 // takes size in count
 template<typename T, typename ITYPE>
 T *generate_dense(size_t size)

@@ -43,15 +43,7 @@ public:
 template<typename T, typename ITYPE>
 CSC<T, ITYPE>::CSC(ITYPE nr, ITYPE nc, ITYPE nz, std::pair<ITYPE, ITYPE> *pairs, T *vals)
 {
-    ITYPE nnz = 0;
-    for (ITYPE i = 0; i < nz; i++) {
-        if (i >= 1 && pairs[i].first == pairs[i - 1].first && pairs[i].second == pairs[i - 1].second) {
-            continue;
-        }
-        pairs[nnz] = pairs[i];
-        vals[nnz] = vals[i];
-        nnz++;
-    }
+    ITYPE nnz = nz;
 
     // Copy in to temp structure for the current time being
     struct v_struct *temp = new struct v_struct[nz];

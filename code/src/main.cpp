@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
     bool serialize_panels = false;
 
     bool runcheck = false;
-    ITYPE Ti = 128, Tk, Tj, Ri = 64, Rj = 64, f, n, resolution;
+    ITYPE Ti = 128, Tk, Tj, Ri = 64, Rj = 64, f = 256, n = 10, resolution = 1;
     ITYPE num_partitions = 2;
     ITYPE nrows, ncols, b, stride, fixed_nnzs;
     double sparsity = 0.1;

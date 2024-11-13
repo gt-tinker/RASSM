@@ -60,6 +60,7 @@ long long spmm_atm_kstream_compiler_vectorized(ATM<T, ITYPE> &S, T* I, T *O, ITY
     #endif
 
     #pragma ivdep
+    // #pragma GCC ivdep
     #pragma vector aligned
     #pragma vector temporal
     #ifdef TRACK_PER_CORE_RUNTIME
@@ -100,7 +101,7 @@ long long spmm_atm_kstream_compiler_vectorized(ATM<T, ITYPE> &S, T* I, T *O, ITY
 
                 ITYPE j = tile_start;
                 for ( ; j < tile_unroll_end; j += 8 ) {
-                    #pragma ivdep
+                    #pragma GCC ivdep
                     #pragma vector nontemporal (csr_vals)
                     // #pragma vector aligned
                     #pragma prefetch I_data:_MM_HINT_T1 // Not sure if the prefetch hint actually works when using AVX2 on CPU

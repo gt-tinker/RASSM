@@ -151,15 +151,14 @@ CSR<T, ITYPE>::CSR( CSR<T, ITYPE> &other ) : nrows(other.nrows), ncols(other.nco
     this->cols = (ITYPE *) std::aligned_alloc(ALLOC_ALIGNMENT, sizeof(ITYPE) * this->nnzs);
     this->vals = (T *) std::aligned_alloc(ALLOC_ALIGNMENT, sizeof(T) * this->nnzs);
 
-    #pragma omp parallel for schedule(static, 8)
+    #pragma omp parallel for schedule(static)
     for (ITYPE i = 0; i < (this->nrows + 1); i++) {
         this->row_ptr[i] = other.row_ptr[i];
     }
 
-    #pragma omp parallel for schedule(static, 8)
+    #pragma omp parallel for schedule(static)
     for (ITYPE i = 0; i < this->nnzs; i++) {
         this->cols[i] = other.cols[i];
-        // this->vals[i] = 0;
         this->vals[i] = other.vals[i];
     }
 }
@@ -195,164 +194,6 @@ void CSR<T, ITYPE>::print_matrix()
         }
         std::cerr << std::endl;
     }
-}
-
-template <typename T, typename ITYPE>
-class SPLIT_CSR
-{
-public:
-    ITYPE partition_size; // Size of each veritcal parition
-    ITYPE num_partitions; // Number of vertical splits of a panel
-    ITYPE panel_height;   // Number of rows in a row panel
-
-    ITYPE nrows, ncols, nnzs;
-
-    ITYPE *row_ptr; // how do we index into this?
-                    // Indexing scheme
-                    // partition * nrows + row
-
-    ITYPE *cols; // column value of the non-zero
-    T *vals;     // value of the non-zero
-
-    SPLIT_CSR(ITYPE nrows, ITYPE ncols, ITYPE nnzs, std::pair<ITYPE, ITYPE> *locs, T *vals, ITYPE num_partitions);
-};
-
-// Let's pass this is deduplicated list
-template <typename T, typename ITYPE>
-SPLIT_CSR<T, ITYPE>::SPLIT_CSR(ITYPE nrows, ITYPE ncols, ITYPE nnzs, std::pair<ITYPE, ITYPE> *locs, T *vals, ITYPE num_partitions) : nrows(nrows), ncols(ncols), nnzs(nnzs), num_partitions(num_partitions)
-{
-    this->partition_size = CEIL(ncols, num_partitions);
-    std::cout << "Num Partitions: " << num_partitions << std::endl;
-    std::cout << "Parition Size: " << partition_size << std::endl;
-    this->panel_height = -1;
-
-    struct v_struct *temp = new struct v_struct[nnzs];
-    ITYPE real_nnz = 0;
-    for (ITYPE i = 0; i < nnzs; i++)
-    {
-        if (i >= 1 && ((locs[i].first == locs[i - 1].first) && (locs[i].second == locs[i - 1].second)))
-        {
-            continue;
-        }
-        temp[real_nnz].row = locs[i].first;
-        temp[real_nnz].col = locs[i].second;
-        temp[real_nnz].val = vals[i];
-        temp[real_nnz].grp = temp[real_nnz].col / partition_size;
-
-        real_nnz++;
-    }
-    this->nnzs = nnzs = real_nnz;
-
-    std::qsort(temp, nnzs, sizeof(struct v_struct), compare1);
-
-    ITYPE size_row_ptr = (num_partitions * nrows) + 1;
-    this->row_ptr = (ITYPE *)std::aligned_alloc(ALLOC_ALIGNMENT, size_row_ptr * sizeof(ITYPE));
-    std::memset(this->row_ptr, 0, size_row_ptr * sizeof(ITYPE));
-    this->cols = (ITYPE *)std::aligned_alloc(ALLOC_ALIGNMENT, nnzs * sizeof(ITYPE));
-    std::memset(this->cols, 0, nnzs * sizeof(ITYPE));
-    this->vals = (T *)std::aligned_alloc(ALLOC_ALIGNMENT, nnzs * sizeof(T));
-    std::memset(this->vals, 0, nnzs * sizeof(T));
-
-    // Iterate over the matrix and figure out
-    for (ITYPE i = 0; i < nnzs; i++)
-    {
-
-        ITYPE segment_multiplier = temp[i].grp;
-        ITYPE row = temp[i].row;
-
-        this->row_ptr[row + (segment_multiplier * nrows) + 1]++;
-    }
-    // print_arr<ITYPE>( this->row_ptr, size_row_ptr, "row_ptr", 0, 1 );
-
-    // Add row ptrs to their respective place
-    for (ITYPE i = 1; i < size_row_ptr; i++)
-    {
-        this->row_ptr[i] += this->row_ptr[i - 1];
-    }
-
-    ITYPE prev_row = -1;
-    ITYPE prev_partition = -1;
-    ITYPE num_processed = 0;
-    for (ITYPE i = 0; i < nnzs; i++)
-    {
-        ITYPE curr_row = temp[i].row;
-        ITYPE curr_partition = temp[i].grp;
-
-        if (prev_partition != curr_partition || curr_row != prev_row)
-        {
-            num_processed = 0;
-        }
-
-        ITYPE index = this->row_ptr[curr_row + (nrows * curr_partition)];
-        this->cols[index + num_processed] = temp[i].col;
-        this->vals[index + num_processed] = temp[i].val;
-        num_processed++;
-
-        prev_row = curr_row;
-        prev_partition = curr_partition;
-    }
-
-    // print_arr<ITYPE>( this->row_ptr, size_row_ptr, "row_ptr", 0, 1 );
-    // print_arr<ITYPE>( this->cols, nnzs, "cols", 0, 1 );
-}
-
-template <typename T, typename ITYPE>
-void generate_csr_histogram(CSR<T, ITYPE> &A, ITYPE Ti, ITYPE feature)
-{
-    ITYPE num_panels = CEIL(A.nrows, Ti);
-    std::map<ITYPE, ITYPE> size_histogram;
-    std::map<ITYPE, ITYPE> nnzs_histogram;
-
-    // nnzs, nars, nacs, size
-    std::map<std::tuple<ITYPE, ITYPE, ITYPE, ITYPE>, ITYPE> tile_histogram;
-    for (ITYPE panel = 0; panel < num_panels; panel++) {
-        ITYPE start_row = panel * Ti;
-        ITYPE end_row = MIN((panel + 1) * Ti, A.nrows);
-
-        ITYPE tile_nnzs = 0;
-        std::set<ITYPE> tile_rows;
-        std::set<ITYPE> tile_cols;
-
-        for (ITYPE row = start_row; row < end_row; row++) {
-            tile_rows.insert(row);
-            ITYPE row_start = A.row_ptr[row];
-            ITYPE row_end = A.row_ptr[row + 1];
-            for (ITYPE ptr = row_start; ptr < row_end; ptr++) {
-                tile_nnzs++;
-                tile_cols.insert(A.cols[ptr]);
-            }
-        }
-
-        ITYPE tile_nars = tile_rows.size();
-        ITYPE tile_nacs = tile_cols.size();
-        ITYPE tile_size = (tile_nacs + tile_nars) * feature * sizeof(T);
-
-        size_histogram[tile_size]++;
-        nnzs_histogram[tile_nnzs]++;
-        tile_histogram[std::make_tuple(tile_nnzs, tile_nars, tile_nacs, tile_size)]++;
-    }
-
-    std::cout << "BEGIN TILE INFO MAP" << std::endl;
-    std::cout << "NNZS, NARS, NACS, SIZE, COUNT" << std::endl;
-    for (auto &tile : tile_histogram) {
-        std::cout << std::get<0>(tile.first) << ", " << std::get<1>(tile.first) << ", " << std::get<2>(tile.first) << ", " << std::get<3>(tile.first) << ", " << tile.second << std::endl;
-    }
-    std::cout << "END TILE INFO MAP" << std::endl;
-
-    std::cout << "BEGIN TILE SIZE HISTOGRAM" << std::endl;
-    std::cout << "SIZE, COUNT" << std::endl;
-    for (auto &size : size_histogram) {
-        std::cout << size.first << ", " << size.second << std::endl;
-    }
-    std::cout << "END TILE SIZE HISTOGRAM" << std::endl;
-
-    std::cout << "BEGIN TILE NNZS HISTOGRAM" << std::endl;
-    std::cout << "NNZS, COUNT" << std::endl;
-    for (auto &nnzs : nnzs_histogram) {
-        std::cout << nnzs.first << ", " << nnzs.second << std::endl;
-    }
-    std::cout << "END TILE NNZS HISTOGRAM" << std::endl;
-
 }
 
 #endif // CSR_H

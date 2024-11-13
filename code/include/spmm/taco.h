@@ -60,6 +60,7 @@ long long spmm_csf_compiler_vectorized(CSF<T, ITYPE> &S, T *I, T *O, ITYPE featu
                 for ( ; jiA < A4_pos[(iiA + 1)]; jiA++) {
                     ITYPE ji = A4_crd[jiA]; // column
                     // ITYPE jiB = jo * B2_dimension + ji;
+                    #pragma GCC ivdep
                     for (ITYPE k = 0; k < feature; k++) {
                         // ITYPE kC = iiC * feature + k;
                         // ITYPE kB = jiB * feature + k;
