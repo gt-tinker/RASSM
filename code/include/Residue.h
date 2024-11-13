@@ -46,7 +46,6 @@ public:
     CSR<T, ITYPE> *_spm;
     CSC<T, ITYPE> *_csc;
 
-    const std::string &data_path;
     const std::string &mtx_name;
 
     ITYPE Ti;   // Height of sparse tile
@@ -68,7 +67,7 @@ public:
     CSR<RangeInfo<ITYPE>, ITYPE> *active_rows_range = nullptr;
 
     // Functions and constructors
-    Residue(CSR<T, ITYPE> *spm, CSC<T, ITYPE> *csc, int64_t Ti = 64, int64_t Tj = 64, int64_t Tk = 0, const std::string &data_path = 0, const std::string &mtx_name = 0, ITYPE resolution = 1, bool range_augmentation = false);
+    Residue(CSR<T, ITYPE> *spm, CSC<T, ITYPE> *csc, int64_t Ti = 64, int64_t Tj = 64, const std::string &mtx_name = 0, ITYPE resolution = 1, bool range_augmentation = false);
     ~Residue();
 
     // 2D adaptive tiling methods
@@ -101,9 +100,8 @@ Residue<T, ITYPE>::~Residue() {
 
 // Constructor for the residue matrix
 template<typename T, typename ITYPE>
-Residue<T, ITYPE>::Residue(CSR<T, ITYPE> *spm, CSC<T, ITYPE> *csc, int64_t Ti, int64_t Tj, int64_t Tk,
-                            const std::string &data_path, const std::string &mtx_name, ITYPE resolution, bool augment_temporal) : Ti(Ti), Tj(Tj), Tk(Tk),
-                                data_path(data_path), mtx_name(mtx_name), resolution(resolution) {
+Residue<T, ITYPE>::Residue(CSR<T, ITYPE> *spm, CSC<T, ITYPE> *csc, int64_t Ti, int64_t Tj, const std::string &mtx_name,
+                                ITYPE resolution, bool augment_temporal) : Ti(Ti), Tj(Tj), Tk(Tk), mtx_name(mtx_name), resolution(resolution) {
 
     if (Ti < 0 || Tj < 0) { return; }
     _spm = spm;

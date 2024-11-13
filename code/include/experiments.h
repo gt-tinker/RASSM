@@ -23,6 +23,7 @@
     #include "sddmm/tiled.h"
     #include "sddmm/simple.h"
 #else   // Might be using a compiler that does not recoganize Intel intrinsics
+    #include "spmm/jstream.h"
     #include "spmm/kstream.h"
     #include "spmm/simple.h"
     #include "spmm/taco.h"
@@ -84,7 +85,7 @@
 // #define RUN_HYB_EXPR
 
 // TODO: Fix me
-#define RUN_CSR_ATM_KSTREAM
+// #define RUN_CSR_ATM_KSTREAM
 
 // #define RUN_DYN_HYB_EXPR
 
@@ -248,7 +249,7 @@ void reset_matrix_helper_slow(double *arr, size_t size, int num_threads = 20)
 #define ERROR_THRESHOLD 0.03    // We can tolerate a 3% error
 
 template <typename T, typename ITYPE>
-void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti, ITYPE Tj, ITYPE Tk, ITYPE n, ITYPE num_threads = 1, ITYPE chunk_size = 1, ITYPE layers = 1, ITYPE num_panels = 0, ITYPE *num_panels_per_thread = nullptr, struct workitem *work_list = nullptr, ITYPE *panel_worklist = nullptr, ITYPE num_partitions = 2, std::vector<struct panel_t> *adaptive_panels = nullptr, std::string stm_filename = "", ITYPE fixed_nnzs = 0 )
+void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti, ITYPE Tj, ITYPE Tk, ITYPE n, ITYPE num_threads = 1, ITYPE chunk_size = 1, ITYPE layers = 1, ITYPE num_panels = 0, ITYPE *num_panels_per_thread = nullptr, struct workitem *work_list = nullptr, ITYPE *panel_worklist = nullptr, ITYPE num_partitions = 2, std::vector<struct panel_t> *adaptive_panels = nullptr, ITYPE fixed_nnzs = 0, runtype run_mode = runtype::RASSM )
 {
     ITYPE nrows, ncols, nnzs;
     std::pair<ITYPE, ITYPE> *locs = nullptr;
@@ -274,11 +275,6 @@ void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti
 
     S_csr = new CSR<T, ITYPE>( nrows, ncols, nnzs, locs, vals );
 
-    #if defined (RUN_CSR_WORKLIST_EXPR)
-        S_csr->augment_panel_ptrs( num_panels, work_list );
-        std::pair<ITYPE, ITYPE> *pairs_worklist;
-    #endif
-
     std::cout << "M: " << S_csr->nrows << std::endl;
     std::cout << "N: " << S_csr->ncols << std::endl;
     std::cout << "NNZ: " << S_csr->nnzs << std::endl;
@@ -290,71 +286,13 @@ void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti
     print_status("Chunk size for openmp: %d\n", chunk_size);
     // std::cout << "Chunk Size: " << chunk_size << std::endl;
 
-    #if defined(RUN_DCSC_JSTREAM_EXPR) || defined(RUN_DCSC_WORKLIST) || defined(RUN_DCSC_JSTREAM_COMPILER_EXPR)
-        if (work_list && num_panels_per_thread) {
-            std::cerr << "STATUS: Building work item based DCSC matrix" << std::endl;
-            // ITYPE num_panels = 0;
-            // for (ITYPE tid = 0; tid < num_threads; tid++) {
-            //     num_panels += num_panels_per_thread[tid];
-            // }
-            S_dcsc = new DCSC<T, ITYPE>( nrows, ncols, nnzs, locs, vals, num_panels, work_list );
+    if (run_mode == runtype::JSTREAM) {
+        S_dcsc = new DCSC<T, ITYPE>( nrows, ncols, nnzs, locs, vals, Ti );
+        print_status("Matrix structure verified?: %d\n", verify_matrices( *S_csr, *S_dcsc ));
+    } else if (run_mode == runtype::CSR_32) {
 
-            S_stm = new STM<T, ITYPE>( nrows, ncols, nnzs, locs, vals, Ti, Tj );
-            std::cout << "Matrices are correct?: " << verify_matrices(S_csr, S_dcsc, S_stm) << std::endl;
-        } else if (work_list) {
-            std::cerr << "STATUS: Building work item based DCSC matrix" << std::endl;
-            S_dcsc = new DCSC<T, ITYPE>( nrows, ncols, nnzs, locs, vals, num_panels, work_list );
+    } else if (run_mode == runtype::CSF_US || run_mode == runtype::CSF_UO) {
 
-            S_stm = new STM<T, ITYPE>( nrows, ncols, nnzs, locs, vals, Ti, Tj );
-            std::cout << "Matrices are correct?: " << verify_matrices(S_csr, S_dcsc, S_stm) << std::endl;
-        } else {
-            std::cerr << "STATUS: Building statically split DCSC matrix" << std::endl;
-            S_dcsc = new DCSC<T, ITYPE>( nrows, ncols, nnzs, locs, vals, Ti );
-            // S_stm = new STM<T, ITYPE>( nrows, ncols, nnzs, locs, vals, Ti, Tj );
-
-
-            bool dcsc_matrix_correct = verify_matrices( *S_csr, *S_dcsc );
-
-            std::cout << "DCSC Matrix is correct? : " << dcsc_matrix_correct << std::endl;
-
-
-            if (!dcsc_matrix_correct) {
-                std::cout << "MATRIX ERROR" << std::endl;
-                std::exit(EXIT_FAILURE);
-            }
-
-            // std::exit(0);
-
-            // std::cout << "Matrices are correct?: " << verify_matrices(S_csr, S_dcsc, S_stm) << std::endl;
-        }
-    #endif
-
-    #if defined(RUN_CSR_KSTREAM_EXPR)
-        if ( stm_filename.size() > 0 ) {
-            S_stm = read_serialized_stm( stm_filename.c_str(), S_csr );
-            Ti = S_stm->Ti;
-        } else if (adaptive_panels != nullptr) {
-            S_stm = new STM<TYPE, ITYPE>(nrows, ncols, nnzs, locs, vals, Ti, *adaptive_panels);
-        } else {
-            S_stm = new STM<T, ITYPE>( nrows, ncols, nnzs, locs, vals, Ti, Tj );
-        }
-        bool stm_correct = verify_matrix_structure( S_csr, S_stm );
-        std::cout << "STM Matrix correct? " << stm_correct << std::endl;
-    #endif
-
-    #if defined(RUN_SPLIT_JSTREAM_EXPR)
-        S_split = new SPLIT_CSR<T, ITYPE>( nrows, ncols, nnzs, locs, vals, num_partitions );
-    #endif
-
-    #if defined(RUN_CSR_ATM_KSTREAM)
-        // S_atm = new ATM<T, ITYPE>( nrows, ncols, nnzs, locs, vals, adaptive_panels->size(), *adaptive_panels );
-        S_atm = new ATM<T, ITYPE>( nrows, ncols, nnzs, locs, vals, *adaptive_panels );
-        auto atm_correct = verify_matrix_structure( *S_csr, *S_atm );
-        std::cout << "ATM Matrix correct? " << atm_correct << std::endl;
-    #endif
-
-    #if defined(RUN_CSF_EXPR)
-        // S_csf = new CSF<T, ITYPE>( nrows, ncols, nnzs, locs, vals, Ti, Tj, Tk );
         // First generate the tiled CSF coordinate ordering, then call the constructor
         ITYPE *C1, *C2, *C3, *C4;
         // ITYPE num_csf_panels = generate_coo_representation(Ti, Tj, nnzs, locs, vals, &C1, &C2, &C3, &C4);
@@ -382,7 +320,14 @@ void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti
 
         bool csf_correct = verify_matrix_structure( *S_csr, *S_csf );
         std::cout << "CSF Matrix correct? " << csf_correct << std::endl;
-    #endif
+
+    } else if (run_mode == runtype::RASSM) {
+        S_atm = new ATM<T, ITYPE>( nrows, ncols, nnzs, locs, vals, *adaptive_panels );
+        auto atm_correct = verify_matrix_structure( *S_csr, *S_atm );
+        std::cout << "ATM Matrix correct? " << atm_correct << std::endl;
+    } else {
+
+    }
 
 
     size_t sizeB = ncols * (feature + PADDING_B) * sizeof(T);
@@ -393,30 +338,18 @@ void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti
     size_t sizeC_rounded = CEIL(sizeC, PAGE_SIZE) * PAGE_SIZE;
     size_t countC = CEIL(sizeC_rounded, sizeof(T));
 
-    #ifdef LARGE_ARRAY
-        // Generate the Input and Output Matrices
-        // T *B = generate_dense<T, ITYPE>(ncols, (feature + PADDING_B), layers);
-        // T *C = generate_zeroes<T, ITYPE>(nrows, (feature + PADDING_C), layers);
-        // size_t sizeC = ((size_t) nrows) * ((size_t) feature) * ((size_t) layers);
 
-        size_t countC_alloc = countC * (size_t) layers;
-        size_t countB_alloc = countB * (size_t) layers;
+    T *B[layers];
+    T *C[layers];
 
-        T *B = generate_dense<T, ITYPE>( countB_alloc );
-        T *C = generate_zeroes<T, ITYPE>( countC_alloc );
-
-    #else
-        T *B[layers];
-        T *C[layers];
-
-        for ( ITYPE l = 0; l < layers; l++ ) {
-            B[l] = generate_dense<T, ITYPE>( countB );
-            C[l] = generate_zeroes<T, ITYPE>( countC );
-        }
-    #endif
+    for ( ITYPE l = 0; l < layers; l++ ) {
+        B[l] = generate_dense<T, ITYPE>( countB );
+        C[l] = generate_zeroes<T, ITYPE>( countC );
+    }
 
 
-    #if defined(RUN_ROW_PANEL_COMPILER)
+
+    if (run_mode == runtype::CSR_32) {
         PRINT_TYPE("CSR_ROW_PANEL_COMPILER");
 
         RUN_CHECK(csr_row_panel_compiler_vectorized, S_csr, Ti, Tk);
@@ -426,78 +359,31 @@ void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti
         MEM_RESET(C, countC, layers);
 
         RUN_TIMING(csr_row_panel_compiler_vectorized, S_csr, Ti, Tk);
-    #endif
+    } else if (run_mode == runtype::JSTREAM) {
+        PRINT_TYPE("DCSC_JSTREAM");
 
+        RUN_CHECK(spmm_dcsc_jstream, S_dcsc, Ti, Tk);
 
-    #if defined(RUN_SIMPLE_COMPILER_CSR)
-        PRINT_TYPE("CSR_SIMPLE_COMPILER_VECTORIZED");
-
-        RUN_CHECK(spmm_simple_parallel_compiler_vectorized, S_csr, Ti, Tk);
-
-        RUN_WARMUP_EXPR(spmm_simple_parallel_compiler_vectorized, S_csr, Ti, Tk);
+        RUN_WARMUP_EXPR(spmm_dcsc_jstream, S_dcsc, Ti, Tk);
 
         MEM_RESET(C, countC, layers);
 
-        RUN_TIMING(spmm_simple_parallel_compiler_vectorized, S_csr, Ti, Tk);
-    #endif
+        RUN_TIMING(spmm_dcsc_jstream, S_dcsc, Ti, Tk);
+    } else if (run_mode == runtype::CSF_US || run_mode == runtype::CSF_UO) {
+        PRINT_TYPE("CSF_KSTREAM");
 
+        RUN_CHECK(spmm_csf_compiler_vectorized, S_csf, Ti, Tj);
 
-    #if defined(RUN_SIMPLE_CSR)
-        PRINT_TYPE("CSR_SIMPLE");
-
-        RUN_CHECK(spmm_simple_vectorized_parallel, S_csr, Ti, Tk);
+        RUN_WARMUP_EXPR(spmm_csf_compiler_vectorized, S_csf, Ti, Tj);
 
         MEM_RESET(C, countC, layers);
-        RUN_WARMUP_EXPR(spmm_simple_vectorized_parallel, S_csr, Ti, Tk);
-        MEM_RESET(C, countC, layers);
-        #if defined(TRACK_STATS_NEW)
-            #if defined(REG_STATS)
-                RUN_PERF_HELPER(spmm_simple_vectorized_parallel, reg_perf, reg_counters, perf_event_set::REG_EVENTS, S_csr, Ti, Tk);
-            #elif defined(CACHE_STATS)
-                RUN_PERF_HELPER(spmm_simple_vectorized_parallel, cache_perf, cache_counters, perf_event_set::CACHE_EVENTS, S_csr, Ti, Tk);
-            #elif defined(STALL_STATS)
-                RUN_PERF_HELPER(spmm_simple_vectorized_parallel, stall_perf, stall_counters, perf_event_set::STALL_EVENTS, S_csr, Ti, Tk);
-            #elif defined(DRAM_STATS)
-                RUN_DRAM_HELPER(spmm_simple_vectorized_parallel, dram_perf, dram_counters, perf_event_set::DRAM_EVENTS, S_csr, Ti, Tk);
-            #elif defined(CACHE_STALL_STATS)
-                RUN_PERF_HELPER(spmm_simple_vectorized_parallel, cache_stall_perf, cache_stall_counters, perf_event_set::CACHE_STALL_EVENTS, S_csr, Ti, Tk);
-            #elif defined(DRAM_PRECHARGE_RD_STATS)
-                RUN_DRAM_HELPER(spmm_simple_vectorized_parallel, dram_precharge_rd_perf, dram_precharge_rd_counters, perf_event_set::DRAM_PRECHARGE_RD_EVENTS, S_csr, Ti, Tk);
-            #elif defined(DRAM_PRECHARGE_WR_STATS)
-                RUN_DRAM_HELPER(spmm_simple_vectorized_parallel, dram_precharge_wr_perf, dram_precharge_wr_counters, perf_event_set::DRAM_PRECHARGE_WR_EVENTS, S_csr, Ti, Tk);
-            #elif defined(DRAM_ACTIVATE_RD_STATS)
-                RUN_DRAM_HELPER(spmm_simple_vectorized_parallel, dram_activate_rd_perf, dram_activate_rd_counters, perf_event_set::DRAM_ACTIVATE_RD_EVENTS, S_csr, Ti, Tk);
-            #elif defined(DRAM_ACTIVATE_WR_STATS)
-                RUN_DRAM_HELPER(spmm_simple_vectorized_parallel, dram_activate_wr_perf, dram_activate_wr_counters, perf_event_set::DRAM_ACTIVATE_WR_EVENTS, S_csr, Ti, Tk);
-            #endif
-        #else
-            {
-                RUN_TIMING(spmm_simple_vectorized_parallel, S_csr, Ti, Tk);
-                MEM_RESET(C, countC, layers);
-            }
-            #ifndef TRACK_CACHE_ONLY
-                {
-                    RUN_PERF_HELPER(spmm_simple_vectorized_parallel, reg_perf, reg_counters, perf_event_set::REG_EVENTS, S_csr, Ti, Tk);
-                }
-                MEM_RESET(C, countC, layers);
-                {
-                    RUN_PERF_HELPER(spmm_simple_vectorized_parallel, cache_perf, cache_counters, perf_event_set::CACHE_EVENTS, S_csr, Ti, Tk);
-                }
-                MEM_RESET(C, countC, layers);
-                {
-                    RUN_PERF_HELPER(spmm_simple_vectorized_parallel, stall_perf, stall_counters, perf_event_set::STALL_EVENTS, S_csr, Ti, Tk);
-                }
-                MEM_RESET(C, countC, layers);
-                {
-                    RUN_DRAM_HELPER(spmm_simple_vectorized_parallel, dram_perf, dram_counters, perf_event_set::DRAM_EVENTS, S_csr, Ti, Tk);
-                }
-            #else // TRACK_CACHE_ONLY
-                {
-                    RUN_PERF_HELPER(spmm_simple_vectorized_parallel, cache_only_perf, cache_only_counters, perf_event_set::CACHE_ONLY_EVENTS, S_csr, Ti, Tk);
-                }
-            #endif
-        #endif // TRACK_STATS_NEW
-    #endif
+
+        RUN_TIMING(spmm_csf_compiler_vectorized, S_csf, Ti, Tj);
+    } else if (run_mode == runtype::RASSM) {
+
+    } else {
+
+    }
 
 
     #if defined(RUN_DCSC_JSTREAM_EXPR)
@@ -566,7 +452,6 @@ void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti
 
 
     #ifdef INTEL_MKL
-
     {
         PRINT_TYPE("INTEL MKL SPMM");
 
@@ -599,9 +484,6 @@ void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti
         if ( status != SPARSE_STATUS_SUCCESS ) {
             print_error_exit("Could not create mkl sparse matrix");
         }
-
-        // Warmup iteration
-        // status = mkl_sparse_d_mm( SPARSE_OPERATION_NON_TRANSPOSE, mkl_alpha, mkl_S, mkl_S_desc, SPARSE_LAYOUT_ROW_MAJOR, B, mkl_ncols, mkl_feature, mkl_beta, C, mkl_nrows );
 
         auto hint_start_time = std::chrono::high_resolution_clock::now();
         status = mkl_sparse_set_mm_hint( mkl_S, SPARSE_OPERATION_NON_TRANSPOSE, mkl_S_desc, SPARSE_LAYOUT_ROW_MAJOR, mkl_feature, mkl_n );
@@ -666,44 +548,23 @@ void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti
             RUN_MKL_TIMING;
         #endif
     }
-
-
-    // Let's only use doubles
     #endif // INTEL_MKL
 
-
-#ifdef LARGE_ARRAY
-    release_memory(B);
-    release_memory(C);
-#else
+    // Free all allocated memory
     for (ITYPE l = 0; l < layers; l++) {
         release_memory(B[l]);
         release_memory(C[l]);
     }
-#endif
 
-    #ifdef RUN_DCSC_JSTREAM_EXPR
-        delete S_dcsc;
-    #endif
-
-    #ifdef RUN_CSR_KSTREAM_EXPR
-        delete S_stm;
-    #endif
-
-    #ifdef RUN_HYB_EXPR
-        delete S_dcsh;
-        std::free(pairs_worklist);  // Was allocated only for this particular matrix type
-    #endif
-
-    #ifdef RUN_CSR_ATM_EXPR
-        delete S_atm;
-    #endif
+    if (S_dcsc) { delete S_dcsc; }
+    if (S_csr) { delete S_csr; }
+    if (S_csf) { delete S_csf; }
+    if (S_atm) { delete S_atm; }
 
     if (!using_global) {
         if (locs) { delete[] locs; }
         if (vals) { delete[] vals; }
     }
-    if (S_csr) { delete S_csr; }
 
     return;
 }

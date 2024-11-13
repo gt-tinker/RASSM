@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <map>
 
 using ITYPE = int32_t;
 // using ITYPE = int64_t;
@@ -58,6 +59,9 @@ using TYPE = double;
         // Instruction definition for manually vectorized code
         #define rtype __m256d
         #define vfma _mm256_fmadd_pd
+        #define vload _mm256_loadu_pd
+        #define vstore _mm256_storeu_pd
+        #define vset _mm256_set1_pd
 
         #define lfence __builtin_ia32_lfence
         #define mfence __builtin_ia32_mfence
@@ -175,12 +179,32 @@ extern bool global_debug;
     // #define RUN_DCSC_JSTREAM
 #endif
 
-#define ONLY_PERF
 
-// data structures for configuration and such
-template<typename ITYPE, typename TYPE>
-struct SpMM_Config {
-    static constexpr ITYPE kBlockWidth = 32 * 8;
+enum runtype {
+    RASSM = 0,
+    JSTREAM,
+    ASPT,
+    CSR_32,
+    CSF_US,
+    CSF_UO
+};
+
+const std::map<std::string, runtype> str_to_runtype = {
+    {"RASSM", runtype::RASSM},
+    {"JSTREAM", runtype::JSTREAM},
+    {"ASPT", runtype::ASPT},
+    {"CSR_32", runtype::CSR_32},
+    {"CSF_US", runtype::CSF_US},
+    {"CSF_UO", runtype::CSF_UO}
+};
+
+const std::map<runtype, std::string> runtype_to_str = {
+    {runtype::RASSM, "RASSM"},
+    {runtype::JSTREAM, "JSTREAM"},
+    {runtype::ASPT, "ASPT"},
+    {runtype::CSR_32, "CSR_32"},
+    {runtype::CSF_US, "CSF_US"},
+    {runtype::CSF_UO, "CSF_UO"}
 };
 
 #endif // CONFIG_H
