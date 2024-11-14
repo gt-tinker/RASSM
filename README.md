@@ -2,7 +2,7 @@
 ASPLOS 2025 RASSM Artifact
 
 ### Download Instructions
-Clone this repository using `git clone https://github.com/RASSM/`
+Clone this repository using `git clone https://github.com/gt-tinker/RASSM.git`
 
 ### Pre-requisites
 1. C++ compiler such as gcc-13 or Intel Classic Compiler ICC (preffered) -- https://www.intel.com/content/www/us/en/developer/articles/news/intel-c-compiler-classic-2021-2-1-release.html
@@ -25,7 +25,7 @@ To build this repository, you will require a vectorizing C++ compiler that suppo
 2. `cd $RASSM_HOME`
 3. `mkdir build`
 4. `export RASSM_BUILD=$RASSM_HOME/build`
-5. `cd build`
+5. `cd build`z
 6. `cmake ../`
 7. `make`
 
@@ -39,3 +39,13 @@ If everything goes smoothly, the `rassm` executable should be produced.
 Once you have built the executable `rassm`, use the provided `$RASSM_HOME/scripts/run_basic_test.sh` script using `bash $RASSM_HOME/scripts/run_basic_test.sh`. This should run the `rassm` program for all the baselines and `rassm` itself for the SpMM kernel and make sure all the baselines are functional.
 
 ### Reproducing Figure 6 from the paper
+To reproduce Figure 6 from the associated paper, the following sequence of commands should be used, assuming you are in `$RASSM_HOME`:
+1. `bash scripts/run-all.sh` -- This will require several hours to finish and we recommend not using the system during this time. One way to use this command and exit the shell instance is via `nohup`. The command will then be `nohup bash scripts/run-all.sh > run-all.log &`
+
+2. `bash scripts/extract_stats.sh`
+3. Open the Jupyter notebook and hit the run button. Make sure the `working_dir` variable in the second block points to the output directory where the `extract_stats.sh` script generated the csv files.
+
+
+You should now be able to see the plots from Figure 6 of the paper. Recall that the exact numbers will vary on several factors such as the machine used, background processes, etc. However, the general trends should be similar.
+
+Please don't hesitate to reach out to us if you have any issues using this code.
