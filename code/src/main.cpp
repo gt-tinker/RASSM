@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
         ("Rj", boost::program_options::value<ITYPE>()->default_value(64), "Residue matrix tile size is RxR")
         ("greedy", boost::program_options::value<bool>()->default_value(true), "Use the greedy algorithm for the residue matrix")
         ("squeeze-tiles", boost::program_options::value<bool>()->default_value(false), "Squeeze the tiles in each matrix panel")
-        ("sort-tiles", boost::program_options::value<bool>()->default_value(true), "Sort the tiles in each matrix panel")
+        ("sort-tiles", boost::program_options::value<bool>()->default_value(false), "Sort the tiles in each matrix panel")
 
         ("temporal-input", boost::program_options::value<bool>()->default_value(false), "use temporal volume instead of spatial")
         ("temporal-output", boost::program_options::value<bool>()->default_value(false), "use temporal volume instead of spatial")

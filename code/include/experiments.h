@@ -380,7 +380,16 @@ void data_movement_experiment( std::string mtx_filename, ITYPE feature, ITYPE Ti
 
         RUN_TIMING(spmm_csf_compiler_vectorized, S_csf, Ti, Tj);
     } else if (run_mode == runtype::RASSM) {
+        PRINT_TYPE("CSR_ATM_KSTREAM");
+        Tj = Tk;
 
+        RUN_CHECK(spmm_atm_kstream_compiler_vectorized, S_atm, Ti, Tj);
+
+        RUN_WARMUP_EXPR(spmm_atm_kstream_compiler_vectorized, S_atm, Ti, Tj);
+
+        MEM_RESET(C, countC, layers);
+
+        RUN_TIMING(spmm_atm_kstream_compiler_vectorized, S_atm, Ti, Tj);
     } else {
 
     }

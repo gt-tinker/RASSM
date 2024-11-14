@@ -1,5 +1,11 @@
-mkdir large_dataset_40M
-cd large_dataset_40M
+# check if RASSM_DATASET is set
+if [ -z "$RASSM_DATASET" ]; then
+    echo "RASSM_DATASET is not set, please set it to the path where the dataset should be downloaded"
+    exit 1
+fi
+
+mkdir -p $RASSM_DATASET/rassm_dataset
+cd $RASSM_DATASET/rassm_dataset
 
 wget https://suitesparse-collection-website.herokuapp.com/MM/ATandT/pre2.tar.gz
 wget https://suitesparse-collection-website.herokuapp.com/MM/ATandT/twotone.tar.gz
@@ -362,5 +368,5 @@ wget https://suitesparse-collection-website.herokuapp.com/MM/Precima/analytics.t
 find . -name '*.tar.gz' -exec tar xvf {} \;
 rm *.tar.gz
 
-cd ..
+cd -
 
