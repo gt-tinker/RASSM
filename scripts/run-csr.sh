@@ -83,8 +83,8 @@ do
 
     mkdir -p ${ofilepath}
     echo ${matrix_name}
-    ofile="${ofilepath}/rassm.out"
-    out_e_file="${ofilepath}/rassm.err"
+    ofile="${ofilepath}/$typename.out"
+    out_e_file="${ofilepath}/$typename.err"
 
     if test -f "${ofile}"; then
         rm ${ofile}

@@ -4,8 +4,8 @@ if [ -z "$RASSM_DATASET" ]; then
     exit 1
 fi
 
-mkdir -p $RASSM_DATASET/rassm_dataset
-cd $RASSM_DATASET/rassm_dataset
+mkdir -p $RASSM_DATASET
+cd $RASSM_DATASET
 
 wget https://suitesparse-collection-website.herokuapp.com/MM/ATandT/pre2.tar.gz
 wget https://suitesparse-collection-website.herokuapp.com/MM/ATandT/twotone.tar.gz
