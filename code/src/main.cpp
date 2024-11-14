@@ -5,7 +5,7 @@
 #include "global.h"
 #include "Reader.h"
 #include "Residue.h"
-// #include "Spdmm.h"
+#include "model.h"  // jstream model
 #include "utils/Statistics.h"
 #include "utils/util.h"
 
@@ -207,22 +207,21 @@ int main(int argc, char *argv[])
     std::pair<ITYPE, ITYPE> *pairs_worklist = nullptr;
     std::vector<struct panel_t> adaptive_2d_tiles;
 
-    if (residue) {
-        auto start_time = std::chrono::high_resolution_clock::now();
+    // read the matrix file into global variables
+    auto start_time = std::chrono::high_resolution_clock::now();
+    // check if the matrix is in mtx format or smtx format
+    if (mtx_file.find(".mtx") != std::string::npos) {
+        read_mtx_matrix_into_arrays<TYPE, ITYPE>( mtx_file.c_str(), &global_locs, &global_vals, &global_nrows, &global_ncols, &global_nnzs );
+    } else if (mtx_file.find(".smtx") != std::string::npos) {
+        read_smtx_matrix_into_arrays<TYPE, ITYPE>( mtx_file.c_str(), &global_locs, &global_vals, &global_nrows, &global_ncols, &global_nnzs );
+    } else {
+        print_error_exit("Unknown matrix file format: %s\n", mtx_file.c_str());
+    }
+    auto end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> diff = (end_time - start_time);
+    print_status("Matrix File Read Time %f\n", diff.count() );
 
-        // check if the matrix is in mtx format or smtx format
-        if (mtx_file.find(".mtx") != std::string::npos) {
-            read_mtx_matrix_into_arrays<TYPE, ITYPE>( mtx_file.c_str(), &global_locs, &global_vals, &global_nrows, &global_ncols, &global_nnzs );
-        } else if (mtx_file.find(".smtx") != std::string::npos) {
-            read_smtx_matrix_into_arrays<TYPE, ITYPE>( mtx_file.c_str(), &global_locs, &global_vals, &global_nrows, &global_ncols, &global_nnzs );
-        } else {
-            std::cout << "Unknown matrix format: " << mtx_file << std::endl;
-            std::exit(EXIT_FAILURE);
-        }
-        auto end_time = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> diff = (end_time - start_time);
-        print_status("Matrix File Read Time %f\n", diff.count() );
-
+    if (run_mode == runtype::RASSM) {
         CSR<TYPE, ITYPE> *spm;
         CSC<TYPE, ITYPE> *csc;
         Residue<TYPE, ITYPE> *res;
@@ -259,9 +258,6 @@ int main(int argc, char *argv[])
         print_status("Running Residue Generation -- Ti: %d, Tk: %d, Tj: %d\n", Ti, Tk, Tj);
 
         #ifndef RUN_ADAPTIVE_2D_TILING
-
-
-
         #else // RUN_ADAPTIVE_2D_TILING
 
             auto start_time_2d_tiling = std::chrono::high_resolution_clock::now();
@@ -308,6 +304,37 @@ int main(int argc, char *argv[])
         delete csc;
         delete spm;
         delete res;
+
+    } else if (run_mode == runtype::JSTREAM) {
+        struct v_struct *temp = new struct v_struct[global_nnzs];
+        for (ITYPE i = 0; i < global_nnzs; i++) {
+            temp[i].val = global_vals[i];
+            temp[i].row = global_locs[i].first;
+            temp[i].col = global_locs[i].second;
+        }
+        std::qsort(temp, global_nnzs, sizeof(struct v_struct), compare2);
+        init_model(global_nrows, global_ncols, global_nnzs, temp);
+
+        // jstream expects the target cache size in number of words
+        auto jstream_target_cache_size = target_cache_size / sizeof(double);
+
+        if (kernel == "spmm") {
+            pick_tile(Ti, Tk, f, jstream_target_cache_size, global_nrows, global_ncols, global_nnzs);
+        } else if (kernel == "sddmm") {
+            pick_tile_sddmm(Ti, Tk, f, jstream_target_cache_size, global_nrows, global_ncols, global_nnzs);
+        }
+
+        ITYPE max_panel_size = CEIL(spm->nrows, num_threads);
+        Ti = MIN( Ti, max_panel_size );
+        Tk = MIN(f, Tk);
+        if (Tj == -1) {
+            Tj = spm->ncols;
+        }
+        std::cout << "JSTREAM Ti: " << Ti << " Tk: " << Tk << std::endl;
+
+        delete[] temp;
+
+    } else if (run_mode == runtype::ASPT) {
 
     } else {  // not running residue matrix tile generation
         // ITYPE nnzs;
