@@ -324,18 +324,15 @@ int main(int argc, char *argv[])
             pick_tile_sddmm(Ti, Tk, f, jstream_target_cache_size, global_nrows, global_ncols, global_nnzs);
         }
 
-        ITYPE max_panel_size = CEIL(spm->nrows, num_threads);
+        ITYPE max_panel_size = CEIL(global_nrows, num_threads);
         Ti = MIN( Ti, max_panel_size );
         Tk = MIN(f, Tk);
-        if (Tj == -1) {
-            Tj = spm->ncols;
-        }
         std::cout << "JSTREAM Ti: " << Ti << " Tk: " << Tk << std::endl;
 
         delete[] temp;
 
     } else if (run_mode == runtype::ASPT) {
-
+        print_error_exit("ASPT has been provided as a standalone executable that partialy relies on this code base\n");
     } else {  // not running residue matrix tile generation
         // ITYPE nnzs;
         // parse_matrix_header<TYPE, ITYPE>( mtx_file.c_str(), &nrows, &ncols, &nnzs );

@@ -15,6 +15,7 @@ find_package(Boost COMPONENTS program_options iostreams serialization)
 
 # set SOURCE using the src directory
 file(GLOB_RECURSE SOURCE "${CMAKE_SOURCE_DIR}/src/*.cpp")
+file(GLOB_RECURSE ASPT_SOURCE "${CMAKE_SOURCE_DIR}/aspt/*.cc")
 
 include_directories("${CMAKE_SOURCE_DIR}/include")
 include_directories("${CMAKE_SOURCE_DIR}/jstream")
@@ -25,7 +26,9 @@ list(APPEND SOURCE "${CMAKE_SOURCE_DIR}/jstream/model.cc")
 # boost is required for this project to run
 if(Boost_FOUND)
     add_executable(rassm ${SOURCE})
+    add_executable(aspt ${ASPT_SOURCE})
     target_include_directories(rassm PUBLIC "${CMAKE_SOURCE_DIR}/include;${PAPI_INCLUDE_DIRS};${Boost_INCLUDE_DIRS}")
+    target_include_directories(aspt PUBLIC "${CMAKE_SOURCE_DIR}/include;${PAPI_INCLUDE_DIRS};${Boost_INCLUDE_DIRS}")
 
     if(APPLE) # Apple machines
         target_link_directories(rassm PUBLIC "/opt/homebrew/opt/libomp/lib")
