@@ -60,13 +60,12 @@ nruns=50
 kernel="spmm"
 layers=4
 
-
 let cachesize=$l2_cache*1024
 
 opath="${output_dir}/K${feature}/${typename}"
 
-logfile="${opath}/thread_${threads}_Ri_${Ri}.log"
-errfile="${opath}/thread_${threads}_Ri_${Ri}.err"
+logfile="${opath}/thread_${threads}.log"
+errfile="${opath}/thread_${threads}.err"
 touch ${logfile}
 touch ${errfile}
 

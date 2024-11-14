@@ -333,9 +333,9 @@ int main(int argc, char *argv[])
 
     } else if (run_mode == runtype::ASPT) {
         print_error_exit("ASPT has been provided as a standalone executable that partialy relies on this code base\n");
+    } else if (run_mode == runtype::CSR_32 || run_mode == runtype::CSF_UO || run_mode == runtype::CSF_US) {
+        // no pre-processing required for these modes
     } else {  // not running residue matrix tile generation
-        // ITYPE nnzs;
-        // parse_matrix_header<TYPE, ITYPE>( mtx_file.c_str(), &nrows, &ncols, &nnzs );
         parse_matrix_header<TYPE, ITYPE>( mtx_file.c_str(), &global_nrows, &global_ncols, &global_nnzs );
         ITYPE max_panel_size = CEIL(global_nrows, num_threads);
         Ti = MIN( Ti, max_panel_size );
@@ -348,44 +348,6 @@ int main(int argc, char *argv[])
 
     size_t total_flop_count = ((size_t) global_nnzs) * ((size_t) 2) * ((size_t) f);
     print_status("Total FLOP Count: %ld\n", total_flop_count);
-
-    #ifdef RUN_CSF_CHARACTERIZATION
-        // generate_adaptive_matrix_histogram<TYPE, ITYPE>( adaptive_2d_tiles );
-        {
-            ITYPE nrows, ncols, nnzs;
-            std::pair<ITYPE, ITYPE> *locs = nullptr;
-            TYPE* vals = nullptr;
-            CSF<TYPE, ITYPE> *S_csf = nullptr;
-            if (global_locs && global_vals) {
-                locs = global_locs;
-                vals = global_vals;
-                nrows = global_nrows;
-                ncols = global_ncols;
-                nnzs = global_nnzs;
-            } else {
-                read_mtx_matrix_into_arrays(stm_file.c_str(), &locs, &vals, &nrows, &ncols, &nnzs);
-                assert( locs && vals && (nnzs > 0) && (ncols > 0) && (nnzs > 0) && "Could not read mtx file" );
-            }
-            ITYPE *C1, *C2, *C3, *C4;
-            ITYPE num_csf_panels = 0;
-            if ( adaptive_2d_tiles.size() > 0 ) {
-                print_status("[CSF] Building rassm csf matrix\n");
-                num_csf_panels = generate_coo_representation_rassm(nnzs, locs, vals, adaptive_2d_tiles, &C1, &C2, &C3, &C4);
-            } else {
-                if (fixed_nnzs > 0) {
-                    print_status("[CSF] Building fixed nnzs csf matrix\n");
-                    num_csf_panels = generate_fixed_nnzs_coo_representation(nnzs, locs, vals, fixed_nnzs, &C1, &C2, &C3, &C4);
-                } else {
-                    print_status("[CSF] Building fixed size csf matrix\n");
-                    num_csf_panels = generate_coo_representation(Ti, Tj, nnzs, locs, vals, &C1, &C2, &C3, &C4);
-                }
-            }
-            S_csf = new CSF<TYPE, ITYPE>( nrows, ncols, nnzs, num_csf_panels, C1, C2, C3, C4, vals );
-            print_tile_histogram( *S_csf, f );
-
-        }
-
-    #endif // RUN_CSF_CHARACTERIZATION
 
     #ifdef DATA_MOVEMENT_EXPERIMENT
 

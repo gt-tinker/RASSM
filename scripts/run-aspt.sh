@@ -1,5 +1,4 @@
-
-typename="rassm"
+typename="aspt"
 
 # check if environment variable RASSM_HOME is set
 if [ -z "$RASSM_HOME" ]; then
@@ -27,14 +26,8 @@ mpath=$RASSM_DATASET
 epath=$RASSM_BUILD
 
 feature=$1
-split=$2
-temporal_output=$3
-temporal_input=$4
-oi_aware=$5
-Ri=${11:-64}
-Rj=${12:-64}
 
-executable="${epath}/rassm"
+executable="${epath}/aspt"
 
 # find number of physical cores on the machine
 cores=$(lscpu | grep "Core(s) per socket" | awk '{print $4}')
@@ -60,15 +53,15 @@ echo "L2 Cache: $l2_cache KB"
 echo "L2 Ways: $l2_ways"
 echo "Matrix path: $mpath"
 
-greedy=1
+greedy=0
+residue=0
 nruns=50
 kernel="spmm"
 layers=4
 
-
 let cachesize=$l2_cache*1024
 
-opath="${output_dir}/K${feature}/${typename}-ti-${temporal_input}-to-${temporal_output}"
+opath="${output_dir}/K${feature}/${typename}"
 
 logfile="${opath}/thread_${threads}.log"
 errfile="${opath}/thread_${threads}.err"
@@ -77,6 +70,7 @@ touch ${errfile}
 
 tfile="${opath}/run.out"
 efile="${opath}/run.err"
+
 for matrix in $mpath/*
 do
     matrix_name=$(basename ${matrix})
@@ -95,10 +89,7 @@ do
         rm ${ofile}
     fi
     matrix_path="${mpath}/${matrix_name}/${matrix_name}.mtx"
-    OMP_NUM_THREADS=${threads} OMP_PROC_BIND=true OMP_PLACES="cores(${cores})" ${executable} --m ${matrix_path} --feature ${feature} --threads ${threads} --numruns ${nruns} --Ri ${Ri} --Rj ${Rj} --targCache ${cachesize} --layers ${layers} --greedy ${greedy} --cache-split ${split} --temporal-output ${temporal_output} --temporal-input ${temporal_input} --oi-aware ${oi_aware}  --kernel ${kernel}  2>$efile >$tfile
-
-    # print the run command to stdout
-    # echo "OMP_NUM_THREADS=${threads} OMP_PROC_BIND=true OMP_PLACES=cores(${cores}) ${executable} --m ${matrix_path} --feature ${feature} --threads ${threads} --numruns ${nruns} --Ri ${Ri} --Rj ${Rj} --targCache ${cachesize} --layers ${layers} --greedy ${greedy} --cache-split ${split} --temporal-output ${temporal_output} --temporal-input ${temporal_input} --oi-aware ${oi_aware}  --kernel ${kernel}"
+    OMP_NUM_THREADS=${threads} OMP_PROC_BIND=true OMP_PLACES="cores(${cores})" ${executable} ${matrix_path} ${feature} ${layers} ${nruns} ${threads} 2>$efile >$tfile
 
     grep "Median Time" $tfile >> ${ofile}
     grep "GFLOPS" $tfile >> ${ofile}
