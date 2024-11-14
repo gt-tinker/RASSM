@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
 
     boost::program_options::options_description desc{"Options"};
     desc.add_options()
-        ("type", boost::program_options::value<std::string>()->default_value( "RASSM" ), "Run mode (RASSM, ASPT, JSTREAM, CSR, CSF_US, CSF_UO)")
+        ("type", boost::program_options::value<std::string>()->default_value( "RASSM" ), "Run mode (RASSM, ASPT, JSTREAM, CSR, CSF_US, CSF_UO, INTEL_MKL)")
         ("mtx,m", boost::program_options::value<std::string>()->default_value(""), "matrix market file path/name")
         ("kernel", boost::program_options::value<std::string>()->default_value("spmm"), "kernel to run")
         ("Ti", boost::program_options::value<ITYPE>()->default_value(512), "I dimension tile size")
@@ -195,10 +195,9 @@ int main(int argc, char *argv[])
 
     omp_set_num_threads( (int) num_threads );
 
-    #ifdef DATA_MOVEMENT_EXPERIMENT
-        // Flush about 80MiB per core of data for the flush
-        init_cache_flush( DEFAULT_CACHE_FLUSH_SIZE * num_threads );
-    #endif // DATA_MOVEMENT_EXPERIMENT
+
+    // Flush about 80MiB per core of data for the flush
+    init_cache_flush( DEFAULT_CACHE_FLUSH_SIZE * num_threads );
 
     ITYPE num_panels = 0;
     ITYPE *num_panels_per_thread = nullptr;
@@ -225,80 +224,43 @@ int main(int argc, char *argv[])
         CSR<TYPE, ITYPE> *spm;
         CSC<TYPE, ITYPE> *csc;
         Residue<TYPE, ITYPE> *res;
-        if (!(greedy == 0 && fixed_nnzs > 0)) {
-            start_time = std::chrono::high_resolution_clock::now();
-            spm = new CSR<TYPE, ITYPE>( global_nrows, global_ncols, global_nnzs, global_locs, global_vals, build_inplace );
-            end_time = std::chrono::high_resolution_clock::now();
-            print_status("Matrix Generation Time %f\n", diff.count() );
 
-            start_time = std::chrono::high_resolution_clock::now();
-            csc = new CSC<TYPE, ITYPE>( global_nrows, global_ncols, global_nnzs, global_locs, global_vals );
-            end_time = std::chrono::high_resolution_clock::now();
-            diff = (end_time - start_time);
-            print_status("CSC Generation Time %f\n", diff.count() );
+        start_time = std::chrono::high_resolution_clock::now();
+        spm = new CSR<TYPE, ITYPE>( global_nrows, global_ncols, global_nnzs, global_locs, global_vals, build_inplace );
+        end_time = std::chrono::high_resolution_clock::now();
+        print_status("Matrix Generation Time %f\n", diff.count() );
 
-            start_time = std::chrono::high_resolution_clock::now();
-            res = new Residue<TYPE, ITYPE>(spm, csc, Ri, Rj, mtx_name, resolution, (temporal_input || temporal_output) );
-            end_time = std::chrono::high_resolution_clock::now();
-            diff = end_time - start_time;
+        start_time = std::chrono::high_resolution_clock::now();
+        csc = new CSC<TYPE, ITYPE>( global_nrows, global_ncols, global_nnzs, global_locs, global_vals );
+        end_time = std::chrono::high_resolution_clock::now();
+        diff = (end_time - start_time);
+        print_status("CSC Generation Time %f\n", diff.count() );
 
-            print_status( "Residue generated with rows: %d, cols: %d, nnzs: %d\n", res->nrows, res->ncols, res->nnz );
+        start_time = std::chrono::high_resolution_clock::now();
+        res = new Residue<TYPE, ITYPE>(spm, csc, Ri, Rj, mtx_name, resolution, (temporal_input || temporal_output) );
+        end_time = std::chrono::high_resolution_clock::now();
+        diff = end_time - start_time;
 
-            print_status( "Residue Generation Time %f\n", diff.count() );
+        print_status( "Residue generated with rows: %d, cols: %d, nnzs: %d\n", res->nrows, res->ncols, res->nnz );
+        print_status( "Residue Generation Time %f\n", diff.count() );
+
+        auto start_time_2d_tiling = std::chrono::high_resolution_clock::now();
+
+        adaptive_2d_tiles = res->adaptive_2d_greedy_Ti_greedy_Tj_tile_generator(f, target_cache_size, cache_split, temporal_input, temporal_output, oi_aware);
+
+        auto end_time_2d_tiling = std::chrono::high_resolution_clock::now();
+
+        auto adaptive_2d_tile_generation_time = std::chrono::duration<double>(end_time_2d_tiling - start_time_2d_tiling).count();
+        print_status("Total tile generation time: %f\n", adaptive_2d_tile_generation_time);
+
+        if (squeeze_tiles) {
+            ITYPE num_tiles_squeezed = combine_generated_tiles<TYPE, ITYPE>( adaptive_2d_tiles, target_cache_size );
+            print_status("Number of tiles squeezed: %d\n", num_tiles_squeezed);
         }
 
-
-        // input processing after reading matrix dimensions and command line arguments
-        ITYPE max_panel_size = CEIL(spm->nrows, num_threads);
-        Ti = MIN( Ti, max_panel_size );
-        Tk = MIN(f, Tk);
-        if (Tj == -1) {
-            Tj = spm->ncols;
+        if (sort_tiles) {   // sort tiles based on active rows and nnzs
+            sort_generated_tiles<TYPE, ITYPE>( adaptive_2d_tiles );
         }
-        print_status("Running Residue Generation -- Ti: %d, Tk: %d, Tj: %d\n", Ti, Tk, Tj);
-
-        #ifndef RUN_ADAPTIVE_2D_TILING
-        #else // RUN_ADAPTIVE_2D_TILING
-
-            auto start_time_2d_tiling = std::chrono::high_resolution_clock::now();
-            if (greedy) {
-                adaptive_2d_tiles = res->adaptive_2d_greedy_Ti_greedy_Tj_tile_generator(f, target_cache_size, cache_split, temporal_input, temporal_output, oi_aware);
-            } else {
-                // adaptive_2d_tiles = res->adaptive_2d_tile_generator_fixed_Ti_greedy_Tj(Ti, f, target_cache_size);
-                print_status("Generating adaptive 2D tiles with fixed Ti: %d and Tj: %d\n", Ti, Tj);
-                // adaptive_2d_tiles = res->adaptive_2d_fixed_Ti_greedy_Tj_tile_generator(Ti, f, target_cache_size);
-                adaptive_2d_tiles.clear();
-            }
-
-            auto end_time_2d_tiling = std::chrono::high_resolution_clock::now();
-            auto adaptive_2d_tile_generation_time = std::chrono::duration<double>(end_time_2d_tiling - start_time_2d_tiling).count();
-            print_status("Total tile generation time: %f\n", adaptive_2d_tile_generation_time);
-
-            // identify_dense_panels<TYPE, ITYPE>(adaptive_2d_tiles, target_cache_size);
-
-            if (squeeze_tiles) {
-                ITYPE num_tiles_before_squeezing = 0;
-                for (ITYPE i = 0; i < adaptive_2d_tiles.size(); i++) {
-                    num_tiles_before_squeezing += adaptive_2d_tiles[i].tiles.size();
-                }
-                print_status("Number of tiles before squeezing: %d\n", num_tiles_before_squeezing);
-                ITYPE num_tiles_squeezed = combine_generated_tiles<TYPE, ITYPE>( adaptive_2d_tiles, target_cache_size );
-                print_status("Number of tiles squeezed: %d\n", num_tiles_squeezed);
-
-                ITYPE num_tiles_after_squeezing = 0;
-                for (ITYPE i = 0; i < adaptive_2d_tiles.size(); i++) {
-                    num_tiles_after_squeezing += adaptive_2d_tiles[i].tiles.size();
-                    std::cout << "Panel: " << i << " -- Num Tiles: " << adaptive_2d_tiles[i].tiles.size() << std::endl;
-                }
-                print_status("Number of tiles after squeezing: %d\n", num_tiles_after_squeezing);
-            }
-
-            if (sort_tiles) {   // sort tiles based on active rows and nnzs to break tiles
-                sort_generated_tiles<TYPE, ITYPE>( adaptive_2d_tiles );
-            }
-
-
-        #endif // RUN_ADAPTIVE_2D_TILING
 
         // release memory used by the residue matrix
         delete csc;
@@ -346,23 +308,17 @@ int main(int argc, char *argv[])
         print_status("Non-Residue Run with Ti: %d, Tj: %d, Tk: %d\n", Ti, Tj, Tk);
     }
 
-    size_t total_flop_count = ((size_t) global_nnzs) * ((size_t) 2) * ((size_t) f);
-    print_status("Total FLOP Count: %ld\n", total_flop_count);
+    // size_t total_flop_count = ((size_t) global_nnzs) * ((size_t) 2) * ((size_t) f);
+    // print_status("Total FLOP Count: %ld\n", total_flop_count);
 
-    #ifdef DATA_MOVEMENT_EXPERIMENT
 
-        if (kernel == "spmm") {
-            data_movement_experiment<TYPE, ITYPE>( mtx_file, f, Ti, Tj, Tk, n, num_threads, chunk_size, layers, num_panels, num_panels_per_thread, work_list, processed_worklist, num_partitions, &adaptive_2d_tiles, fixed_nnzs, run_mode );
-        } else if (kernel == "sddmm") {
-            data_movement_experiment_sddmm<TYPE, ITYPE>( mtx_file, f, Ti, Tj, Tk, n, num_threads, chunk_size, layers, num_panels, num_panels_per_thread, work_list, processed_worklist, num_partitions, &adaptive_2d_tiles, fixed_nnzs );
-        } else if (kernel == "spmv") {
-            // data_movement_experiment_spmv<TYPE, ITYPE>( mtx_file, f, Ti, Tj, Tk, n, num_threads, chunk_size, layers, num_panels, num_panels_per_thread, work_list, processed_worklist, num_partitions, &adaptive_2d_tiles );
-            // data_movement_experiment_spmv<TYPE, ITYPE>( mtx_file, f, Ti, Tj, Tk, n, num_threads, chunk_size, layers, num_panels, num_panels_per_thread, work_list, processed_worklist, num_partitions );
-        } else {
-            // do nothing -- maybe we make this a switch case with nop as an option
-        }
-
-    #endif
+    if (kernel == "spmm") {
+        data_movement_experiment<TYPE, ITYPE>( mtx_file, f, Ti, Tj, Tk, n, num_threads, chunk_size, layers, num_panels, num_panels_per_thread, work_list, processed_worklist, num_partitions, &adaptive_2d_tiles, fixed_nnzs, run_mode );
+    } else if (kernel == "sddmm") {
+        data_movement_experiment_sddmm<TYPE, ITYPE>( mtx_file, f, Ti, Tj, Tk, n, num_threads, chunk_size, layers, num_panels, num_panels_per_thread, work_list, processed_worklist, num_partitions, &adaptive_2d_tiles, fixed_nnzs );
+    } else {
+        // do nothing -- maybe we make this a switch case with nop as an option
+    }
 
     // release global and other memory
     if ( global_locs ) { delete[] global_locs; }
@@ -372,11 +328,8 @@ int main(int argc, char *argv[])
     if ( processed_worklist ) { delete[] processed_worklist; }
     if ( work_list ) { delete[] work_list; }
 
-
     // release memory used for flushing the cache
-    #ifdef DATA_MOVEMENT_EXPERIMENT
-        free_cache_flush();
-    #endif
+    free_cache_flush();
 
     return 0;
 }

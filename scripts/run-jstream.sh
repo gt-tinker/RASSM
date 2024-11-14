@@ -89,7 +89,7 @@ do
         rm ${ofile}
     fi
     matrix_path="${mpath}/${matrix_name}/${matrix_name}.mtx"
-    OMP_NUM_THREADS=${threads} OMP_PROC_BIND=true OMP_PLACES="cores(${cores})" ${executable} --m ${matrix_path} --feature ${feature} --threads ${threads} --numruns ${nruns} --layers ${layers} --residue ${residue} --greedy ${greedy} --kernel ${kernel} --type "CSR_32" 2>$efile >$tfile
+    OMP_NUM_THREADS=${threads} OMP_PROC_BIND=true OMP_PLACES="cores(${cores})" ${executable} --m ${matrix_path} --feature ${feature} --threads ${threads} --numruns ${nruns} --layers ${layers} --residue ${residue} --greedy ${greedy} --kernel ${kernel} --type "JSTREAM" 2>$efile >$tfile
 
     grep "Median Time" $tfile >> ${ofile}
     grep "GFLOPS" $tfile >> ${ofile}

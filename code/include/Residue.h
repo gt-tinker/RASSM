@@ -79,7 +79,6 @@ template<typename T, typename ITYPE>
 Residue<T, ITYPE>::~Residue() {
     if(res_raw_sparse) { delete res_raw_sparse;  }
 
-
     // delete augmentations
     delete bitset_active_cols_csr;
     delete bitset_active_rows_csr;
@@ -769,22 +768,7 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
     ITYPE curr_residue_row = 0; // points to the residue row that has not been added
     ITYPE max_row_panel_height = 0;
 
-
-    // Adding resiliance in the tile builder by looking ahead?
-    const ITYPE lookahead = 0;
-
-    #ifdef CACHE_CONFLICT_ANALYSIS
-        ITYPE num_ways = 8;
-        ITYPE num_cache_blocks_per_way = cache_size / 64 / num_ways;
-        ITYPE num_cache_blocks_per_row = (feature * sizeof(T)) / 64;
-
-        // number of unique rows possible per way -- we have 8 ways so anything higher than an 8 count will cause a conflict
-        ITYPE num_rows_per_way = num_cache_blocks_per_way / num_cache_blocks_per_row;
-
-        std::vector<BitSetCounter<T, ITYPE>> panel_conflict_array;
-        std::vector<std::vector<BitSetCounter<T, ITYPE>>> tile_conflict_array;
-    #endif
-
+    // STEP 1 : Row panel Builder
 
     // build panels until we can
     while ( curr_residue_row < this->nrows ) {
@@ -795,10 +779,6 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
         ITYPE curr_fitting_panel = -1;  // end of the currently fitting panel -- not inclusive
         worklist.push_back( panel_t() );
         panel_t &new_panel = worklist[num_panels];
-        #ifdef CACHE_CONFLICT_ANALYSIS
-            panel_conflict_array.push_back( BitSetCounter<T, ITYPE>(num_rows_per_way) );
-            // new_panel.cache_conflict.init(num_rows_per_way);
-        #endif
 
         ITYPE new_panel_height = 0;
         ITYPE curr_panel_nnzs = 0;
@@ -900,35 +880,12 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
                 new_panel_oi = ((double )(2 * new_panel_nnzs * feature)) / ((double) ((panel_input_volume + panel_output_volume)));
             }
 
-
             if (oi_aware) {
-                // if ( new_panel_oi < curr_panel_oi ) {
-                //     if (new_panel_height == 1) {
-                //         curr_panel_end++;
-                //         new_panel.output_data_cached = (size_t) panel_output_volume;
-                //     }
-                //     curr_fitting_panel = curr_panel_end;
-
-                //     if ( new_res_row > (curr_fitting_panel + lookahead) ) {
-                //         grow_panel = false;
-                //         break;
-                //     }
-                // } else if ( panel_output_volume > max_output_cache_volume ) {
-                //     if ( new_panel_height == 1) {
-                //         curr_panel_end++;
-                //         new_panel.output_data_cached = (size_t) panel_output_volume;
-                //     }
-                //     grow_panel = false;
-                //     break;
-                // }
-
                 if ( new_panel_oi < curr_panel_oi || panel_output_volume > max_output_cache_volume ) {
                     if ( new_panel_height == 1) {
                         curr_panel_end++;
                         new_panel.output_data_cached = (size_t) panel_output_volume;
                     }
-                    // curr_panel_end++;
-                    // new_panel.output_data_cached = (size_t) panel_output_volume;
                     grow_panel = false;
                     break;
                 }
@@ -939,12 +896,6 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
                         curr_panel_end++;
                         new_panel.output_data_cached = (size_t) panel_output_volume;
                     }
-
-                    #ifdef CACHE_CONFLICT_ANALYSIS
-                        for ( ITYPE rt = 0; rt < new_panel_height - 1; rt++ ) {
-                            panel_conflict_array[num_panels].insert( panel_nars[rt] );
-                        }
-                    #endif
 
                     grow_panel = false;
                     break;
@@ -971,12 +922,6 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
 
         panel_height_hist[new_panel.Ti]++;
 
-        #ifdef CACHE_CONFLICT_ANALYSIS
-            if ( panel_conflict_array[num_panels].max_count() > num_ways ) {
-                std::cout << "Panel: " << num_panels << " -- " << "Height: " << new_panel.Ti << " -- " << "max output conflict: " << panel_conflict_array[num_panels].max_count() << std::endl;
-            }
-        #endif
-
         num_panels++;
         curr_residue_row += (curr_panel_end - curr_panel_start);
 
@@ -995,12 +940,7 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
     }
     print_status("Count of Band Panels detected: %ld\n", band_count);
 
-    /*
-    std::cout << "Num panels: " << num_panels;
-    for ( auto &it : worklist ) {
-        std::cout << "Panel start: " << it.start_row << " -- " << it.end_row << " -- " << it.output_data_cached << std::endl;
-    }
-    */
+    // STEP 2 : Tile Builder
 
     ITYPE num_threads = omp_get_max_threads();
     ITYPE max_residues_per_panel = CEIL(max_row_panel_height, this->Ti);
@@ -1009,15 +949,11 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
     BitSet<ITYPE> *tile_nars_pool = new BitSet<ITYPE>[max_residues_per_panel * num_threads];
     BitSet<ITYPE> *curr_tile_nars_pool = new BitSet<ITYPE>[max_residues_per_panel * num_threads];
 
-    // BitSet<ITYPE> *tile_left_nars_pool = new BitSet<ITYPE>[max_residues_per_panel * num_threads];
-    // BitSet<ITYPE> *tile_right_nars_pool = new BitSet<ITYPE>[max_residues_per_panel * num_threads];
-
     ITYPE *cached_res_ptr_pool = new ITYPE[ max_residues_per_panel * num_threads ];
     ITYPE *curr_cached_res_ptr_pool = new ITYPE[ max_residues_per_panel * num_threads ];
 
     RangeInfo<ITYPE> tile_col_range[num_threads];
     RangeInfo<ITYPE> curr_tile_col_range[num_threads];
-    // RangeInfo<ITYPE> tile_row_range[num_threads];
     ITYPE local_num_tiles[num_threads];
     for (ITYPE i = 0; i < num_threads; i++) { local_num_tiles[i] = 0; }
 
@@ -1027,14 +963,8 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
     #pragma omp parallel for num_threads(num_threads)
     for (ITYPE rt = 0; rt < (max_residues_per_panel * num_threads); rt++) {
         tile_nars_pool[rt].init(Ti);
-        // tile_left_nars_pool[rt].init(Ti);
-        // tile_right_nars_pool[rt].init(Ti);
         curr_tile_nars_pool[rt].init(Ti);
     }
-
-    #ifdef CACHE_CONFLICT_ANALYSIS
-        tile_conflict_array.resize(num_panels);
-    #endif
 
     ITYPE DEBUG_PANEL = -1;
 
@@ -1044,15 +974,9 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
         auto tid = omp_get_thread_num();
         panel_t &my_panel = worklist[panel];
 
-        #ifdef CACHE_CONFLICT_ANALYSIS
-            std::vector<BitSetCounter<T, ITYPE>> &my_tile_conflict_array = tile_conflict_array[panel];
-        #endif
-
         BitSet<ITYPE> *tile_nacs = &(tile_nacs_pool[tid * max_residues_per_tile]);
         BitSet<ITYPE> *tile_nars = &(tile_nars_pool[tid * max_residues_per_panel]);
         BitSet<ITYPE> *curr_tile_nars = &(curr_tile_nars_pool[tid * max_residues_per_panel]);
-        // BitSet<ITYPE> *tile_left_nars = &(tile_left_nars_pool[tid * max_residues_per_panel]);
-        // BitSet<ITYPE> *tile_right_nars = &(tile_right_nars_pool[tid * max_residues_per_panel]);
 
         ITYPE *cached_res_ptr = &(cached_res_ptr_pool[tid * max_residues_per_panel]);
         ITYPE *curr_cached_res_ptr = &(curr_cached_res_ptr_pool[tid * max_residues_per_panel]);
@@ -1063,10 +987,6 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
         ITYPE num_residues_per_panel = CEIL(my_panel.Ti, this->Ti);
         ITYPE panel_input_effective_volume = cache_size - ((ITYPE) my_panel.output_data_cached);
         panel_input_effective_volume = MAX(panel_input_effective_volume, 0);
-
-        // std::cout << "Panel: " << panel << " panel_row_start: " << panel_row_start << " -- panel_row_end: " << panel_row_end << std::endl;
-
-        // std::cout << "Panel: " << panel << " -- " << panel_effective_active_rows_count << std::endl;
 
         // start building 2D tiles
         auto &panel_tiles = worklist[panel].tiles;
@@ -1100,12 +1020,8 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
 
                 for (ITYPE ii = panel_row_start; ii < panel_row_end; ii++) {
 
-                    // std::cout << "Growing tile -- " << "Panel: " << panel << " -- " << ii;
-
                     ITYPE res_row_start = cached_res_ptr[ii % num_residues_per_panel] < 0 ? this->bitset_active_cols_csr->row_ptr[ii] : cached_res_ptr[ii % num_residues_per_panel];
                     ITYPE res_row_end = this->bitset_active_cols_csr->row_ptr[ii + 1];
-
-                    // std::cout << " res_row_start: " << res_row_start << " -- res_row_end: " << res_row_end << std::endl;
 
                     for (ITYPE act_res_ptr = res_row_start; act_res_ptr < res_row_end; act_res_ptr++) {
                         ITYPE act_res_col = this->bitset_active_cols_csr->cols[act_res_ptr]; // raw column of the non-zero entry
@@ -1128,36 +1044,11 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
                                 tile_col_range[tid] |= this->active_cols_range->vals[act_res_ptr];
                             }
 
-                            // ASPLOS 2025 - not using this in any computation
-                            // if ( temporal_output ) {
-                            //     tile_row_range[tid] |= this->active_rows_range->vals[act_res_ptr];
-                            // }
-
                             // have to start from the next non-zero next time
                             cached_res_ptr[ii % num_residues_per_panel] = act_res_ptr + 1;
-
                         }
-
-                        // ASPLOS 2025 NOTE : Not using the left and right nars for now
-                        // else if (act_res_col < new_tile.col_start) {
-                        //     tile_left_nars[ii % num_residues_per_panel] |= this->bitset_active_rows_csr->vals[act_res_ptr];
-                        // } else if (act_res_col >= new_tile.col_end) {
-                        //     tile_right_nars[ii % num_residues_per_panel] |= this->bitset_active_rows_csr->vals[act_res_ptr];
-                        // }
                     }
                 }
-
-                // ASPLOS 2025 NOTE : Not using the left and right nars for now
-                // ITYPE running_active_row_count = 0;
-                // ITYPE active_row_killset_count = 0;
-                // ITYPE active_row_genset_count = 0;
-                // for ( ITYPE rt = 0; rt < num_residues_per_panel; rt++ ) {
-                //     active_row_killset_count = (tile_left_nars[rt] & (~(tile_nars[rt] | tile_right_nars[rt]))).count(); // fetched from the left, but not in the curr and the right
-                //     active_row_genset_count = (tile_nars[rt] & (~tile_left_nars[rt])).count();  // not fetched from the left, but in the curr
-                //     running_active_row_count += ((tile_left_nars[rt] & tile_right_nars[rt]) + tile_nars[rt]).count();
-                // }
-
-                // panel_dense_input_cache_volume = cache_size - (running_active_row_count * sizeof(T) * feature);
 
                 if (temporal_input) {
                     new_tile.nacs = tile_col_range[tid].count();
@@ -1223,18 +1114,6 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
                     if (temporal_input) { curr_tile_col_range[tid] = tile_col_range[tid]; }
                 }
 
-                #ifdef CACHE_CONFLICT_ANALYSIS
-                    ITYPE tiles_added = (init_spill ? num_residues_per_tile : num_residues_per_tile-1);
-                    my_tile_conflict_array.push_back( BitSetCounter<T, ITYPE>(num_rows_per_way) );
-                    for ( ITYPE rt = 0; rt < tiles_added; rt++ ) {
-                        my_tile_conflict_array.back().insert( tile_nacs[rt] );
-                    }
-
-                    for ( ITYPE rt = 0; rt < num_residues_per_panel; rt++ ) {
-                        my_tile_conflict_array.back().insert( tile_nars[rt] );
-                    }
-                #endif
-
                 // grow the stride
                 if ( geometric_phase ) {
                     stride *= 2;
@@ -1248,12 +1127,9 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
             for ( ITYPE rt = 0; rt < max_residues_per_tile; rt++ ) { tile_nacs[rt].reset(); }
             for ( ITYPE rt = 0; rt < num_residues_per_panel; rt++ ) {
                 tile_nars[rt].reset();
-                // tile_left_nars[rt].reset();
-                // tile_right_nars[rt].reset();
             }
 
             if (temporal_input) { tile_col_range[tid].reset(); }
-            // if (temporal_output) { tile_row_range[tid].reset(); }
 
             curr_res_col = curr_tile.col_end;
             if ( curr_tile.nnzs ) {  // add to the panel only if there is a non-zero entry
@@ -1276,21 +1152,8 @@ std::vector<struct panel_t> Residue<T, ITYPE>::adaptive_2d_greedy_Ti_greedy_Tj_t
         global_num_tiles += local_num_tiles[i];
     }
 
-    #ifdef CACHE_CONFLICT_ANALYSIS
-        for ( ITYPE panel = 0; panel < num_panels; panel++ ) {
-            auto &my_tile_conflict_array = tile_conflict_array[panel];
-            for ( ITYPE tile = 0; tile < my_tile_conflict_array.size(); tile++ ) {
-                if ( my_tile_conflict_array[tile].max_count() > num_ways ) {
-                    std::cout << "Panel: " << panel << " -- " << "Tile: " << tile << " -- " << "max input conflict: " << my_tile_conflict_array[tile].max_count() << std::endl;
-                }
-            }
-        }
-    #endif
-
     print_status("Total tiles created: %ld\n", global_num_tiles);
 
-    // delete[] tile_left_nars_pool;
-    // delete[] tile_right_nars_pool;
     delete[] tile_nacs_pool;
     delete[] tile_nars_pool;
     delete[] panel_nars;

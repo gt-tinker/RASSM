@@ -164,9 +164,6 @@ long long spmm_atm_kstream_compiler_vectorized(ATM<T, ITYPE> &S, T* I, T *O, ITY
 
                 ITYPE ptr = panel_offset[ row_panel ] + ((i - panel_start[ row_panel ])) * panel_num_tiles;
                 ITYPE row_start = tile_row_ptrs[ptr] + S.special_ptr[special_ptr];
-
-                // ITYPE ptr = panel_offset[ row_panel ] + ((i - panel_start[ row_panel ]) + 1) * panel_num_tiles;
-                // ITYPE row_start = tile_row_ptrs[ptr-1] + S.special_ptr[special_ptr];
                 ITYPE row_end = row_start + SPECIAL_THRESHOLD;
 
                 T temp_sum[feature] = {0,};

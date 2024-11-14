@@ -12,7 +12,6 @@ using TYPE = double;
 #if defined(__x86_64__) || defined(__i386__)
     #ifdef INTEL_COMPILER
         #include <immintrin.h>
-
         /* Instruction definition for manually vectorized code */
         // AVX512 instructions
         #define rtype512 __m512d
@@ -82,11 +81,9 @@ using TYPE = double;
 #define DEFAULT_CACHE_FLUSH_SIZE 1024 * 1024 * 8 // 4 Mi
 #define CACHE_BLOCK_SIZE 64
 
-// #define CACHE_NUM_WAYS 8
 extern ITYPE CACHE_NUM_WAYS;
 
 #define PAGE_SIZE ((size_t)(4 * 1024))  // 4 KiB
-// #define PAGE_SIZE ((size_t) (128 * 1024 * 2))
 
 #define DEFAULT_LLC 1024 * 1024
 #define CREATE_MULTI_OUTPUT_THRESHOLD 10
@@ -119,21 +116,8 @@ extern double beta_val;     // latency impact of the memory operation
 extern bool global_debug;
 
 
-// using ITYPE = int32_t;
-// using TYPE = float;
-
-
 
 /////////////////////// Runtime configurations for which methods to call ///////////////////////
-
-// Runtime configurations for experiments using hardware performance counters
-// #define RUN_BAND_MATRIX_EXPERIMENT
-
-
-// #define GENERATE_RESIDUE_PROPERTIES
-// #define GENERATE_RESIDUE_STATS
-// #define DEBUG_RESIDUE_CONSTRUCTION
-
 
 
 // #define RUN_CHARACTERIZATION
@@ -146,39 +130,11 @@ extern bool global_debug;
 #define RUN_ADAPTIVE_2D_TILING
 // #define ASPT_SPECIAL_SIMD_PARALLEL
 
-// #define RUN_CSF_CHARACTERIZATION
 
 #define DATA_MOVEMENT_EXPERIMENT
 
-
-// #define PRINT_HYBRID_PANEL_CONSTRUCTION
-
-// #define COMPUTE_ONLY_LATENCY
-// #define PER_PANEL_PERF_EVENTS
-// #define TRACK_CACHE_ONLY
-// #define TRACK_STATS_NEW
-
-// #define DEBUG_PRINT_PAPI_STATS
-
 // #define OMP_SCHEDULE static
 #define OMP_SCHEDULE dynamic
-
-// #define TRACK_PER_CORE_RUNTIME // use this to capture per core runtime -- i.e. track load imbalance across the machine
-// #define TRACK_PER_PANEL_RUNTIME // track per panel runtime to find what is going on
-
-// #define CACHE_STATS
-
-// #define VALIDATE_PERF_COUNTERS  // validate perf counters
-
-// Runtime configurations for runtime experiments on input mtx matrices
-#ifdef INTEL_COMPILER
-    // #define RUN_CSR_BASELINE
-    // #define RUN_CSR_JSTREAM
-    // #define RUN_CSR_STM
-    // #define RUN_CSC_STM
-    // #define RUN_DCSC_JSTREAM
-#endif
-
 
 enum runtype {
     RASSM = 0,
@@ -186,7 +142,8 @@ enum runtype {
     ASPT,
     CSR_32,
     CSF_US,
-    CSF_UO
+    CSF_UO,
+    INTEL_MKL,
 };
 
 const std::map<std::string, runtype> str_to_runtype = {
@@ -195,7 +152,8 @@ const std::map<std::string, runtype> str_to_runtype = {
     {"ASPT", runtype::ASPT},
     {"CSR_32", runtype::CSR_32},
     {"CSF_US", runtype::CSF_US},
-    {"CSF_UO", runtype::CSF_UO}
+    {"CSF_UO", runtype::CSF_UO},
+    {"INTEL_MKL", runtype::INTEL_MKL}
 };
 
 const std::map<runtype, std::string> runtype_to_str = {
@@ -204,7 +162,8 @@ const std::map<runtype, std::string> runtype_to_str = {
     {runtype::ASPT, "ASPT"},
     {runtype::CSR_32, "CSR_32"},
     {runtype::CSF_US, "CSF_US"},
-    {runtype::CSF_UO, "CSF_UO"}
+    {runtype::CSF_UO, "CSF_UO"},
+    {runtype::INTEL_MKL, "INTEL_MKL"}
 };
 
 #endif // CONFIG_H
