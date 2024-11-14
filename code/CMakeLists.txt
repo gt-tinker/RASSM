@@ -15,7 +15,12 @@ find_package(Boost COMPONENTS program_options iostreams serialization)
 
 # set SOURCE using the src directory
 file(GLOB_RECURSE SOURCE "${CMAKE_SOURCE_DIR}/src/*.cpp")
+
 include_directories("${CMAKE_SOURCE_DIR}/include")
+include_directories("${CMAKE_SOURCE_DIR}/jstream")
+
+# add jstream/model.cc to the source
+list(APPEND SOURCE "${CMAKE_SOURCE_DIR}/jstream/model.cc")
 
 # boost is required for this project to run
 if(Boost_FOUND)
