@@ -25,8 +25,8 @@ To build this repository, you will require a vectorizing C++ compiler that suppo
 2. `cd $RASSM_HOME`
 3. `mkdir build`
 4. `export RASSM_BUILD=$RASSM_HOME/build`
-5. `cd build`z
-6. `cmake ../`
+5. `cd build`
+6. `cmake ../code`
 7. `make`
 
 If everything goes smoothly, the `rassm` executable should be produced.
